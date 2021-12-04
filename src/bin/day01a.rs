@@ -1,20 +1,35 @@
+use std::io::BufRead;
+use std::str::FromStr;
 
 /// Returns how many "times" the input increases
+/// 
+/// This is done by comparing sliding windows of `size`.
 ///
 /// ## Arguments
 ///
-/// * `input` - an integer slice that should be examined
-fn increases(input: &[i32]) -> i32 {
-    input.windows(2).filter(|w| w[0] < w[1]).count() as i32
+/// * `input` - an i32 slice that should be examined
+/// * `size` - an usize that determines the size of the window
+fn increases(input: &[i32], size: usize) -> i32 {
+    input.windows(size + 1).filter(|w| w[0] < w[size]).count() as i32
+}
+
+fn parse_to_vec<T: FromStr>(input: impl BufRead) -> Vec<T> {
+    input
+        .lines()
+        .filter_map(|s| match s.unwrap().parse::<T>() {
+            Ok(value) => Some(value),
+            _ => None,
+        })
+        .collect()
 }
 
 fn main() {
     let stdin = std::io::stdin();
-    let numbers: Vec<i32> = stdin
-        .lines()
-        .filter_map(|s| s.unwrap().parse::<i32>())
-        .collect()
-        .unwrap();
+    let numbers: Vec<i32> = parse_to_vec(stdin.lock());
+
+    let result = increases(&numbers, 1);
+
+    println!("Result: {}", result);
 }
 
 #[cfg(test)]
@@ -27,7 +42,7 @@ mod tests {
         let data = [0, 1];
 
         // When
-        let result = increases(&data);
+        let result = increases(&data, 1);
 
         // Then
         assert_eq!(1, result);
@@ -39,7 +54,7 @@ mod tests {
         let data = [1, 1];
 
         // When
-        let result = increases(&data);
+        let result = increases(&data, 1);
 
         // Then
         assert_eq!(0, result);
@@ -51,7 +66,7 @@ mod tests {
         let data = [];
 
         // When
-        let result = increases(&data);
+        let result = increases(&data, 1);
 
         // Then
         assert_eq!(0, result);
@@ -63,7 +78,7 @@ mod tests {
         let data = [199, 200, 208, 210, 200, 207, 240, 269, 260, 263];
 
         // When
-        let result = increases(&data);
+        let result = increases(&data, 1);
 
         // Then
         assert_eq!(7, result);
