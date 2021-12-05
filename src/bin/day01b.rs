@@ -3,13 +3,14 @@ use std::str::FromStr;
 
 use aoc2021::sliding_window;
 
+
 /// Split lines in input and return the result parsed as T.
-///
+/// 
 /// Perfect to read lines read from stdin and parse each line as some sort of
 /// data.
-///
+/// 
 /// ## Arguments
-///
+/// 
 /// * `input` - something implementing BufRead
 fn parse_to_vec<T: FromStr>(input: impl BufRead) -> Vec<T> {
     input
@@ -25,7 +26,8 @@ fn main() {
     let stdin = std::io::stdin();
     let numbers: Vec<i32> = parse_to_vec(stdin.lock());
 
-    let result = sliding_window::increases(&numbers, 1);
+    // The only difference to 01 a is the size of the sliding window.
+    let result = sliding_window::increases(&numbers, 3);
 
     println!("Result: {}", result);
 }
@@ -35,14 +37,14 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_example_input_should_result_in_7() {
+    fn test_example_input_should_result_in_5() {
         // Given
         let input = [199, 200, 208, 210, 200, 207, 240, 269, 260, 263];
 
         // When
-        let result = sliding_window::increases(&input, 1);
+        let result = sliding_window::increases(&input, 3);
 
         // Then
-        assert_eq!(7, result);
+        assert_eq!(5, result);
     }
 }
