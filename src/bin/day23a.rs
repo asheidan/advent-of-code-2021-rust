@@ -1,4 +1,5 @@
 use std::fmt;
+use std::iter::Iterator;
 use std::io::BufRead;
 use std::vec::Vec;
 
@@ -98,25 +99,27 @@ impl Map {
         // and then try to "travel the path" (try each position in turn) to see if any is occupied
         // (exists already in the set of positions).
 
-        /*
-        let vertical_travel = match (start.y < goal.y) {
-            true  => ((start.y + 1)..=goal.y).map(|y| Position { x: goal.x, y: y } ),  // travel down
-            false => (goal.y..=start.y).map(|y| Position { x: start.x, y: y } ),  // travel up
-        };
+        let path_position = self.path(start, goal);
 
-        let horizontal_travel = match (start.x < goal.x) {
-            true  => ((start.x + 1)..goal.x).map(|x| Position { x, y: 1 } ),
-            false => (goal.x..start.x).map(|x| Position { x, y: 1 } ),
-        };
-        */
-
-        false
+        ! self.amphipods.iter().any(|amphipod| { path_position.contains(&amphipod.position) })
     }
 
-    fn path(&self, start: &Position, goal: &Position) -> impl Iterator<Item = &Position> + '_ {
-        let foo: Vec<Position> = vec![];
+    fn path(&self, start: &Position, goal: &Position) -> Vec<Position> {
+        let horisontal_positions = match start.x < goal.x {
+            true  => (start.x+1)..=(goal.x),
+            false => (goal.x)..=(start.x-1),
+        }.map(|x| Position { x, y: 1 } );
 
-        foo.iter()
+        let (x, ys) = match start.y > goal.y {
+            true  => (start.x, (goal.y)..=(start.y-1)),
+            false => (goal.x, (start.y+1)..=(goal.y)),
+        };
+
+        println!("{:?}", ys);
+
+        let vertical_positions = ys.map(|y| Position { x, y } );
+
+        horisontal_positions.chain(vertical_positions).collect()
     }
 }
 
@@ -215,24 +218,218 @@ mod test {
             assert_eq!(3, result);
         }
 
+        #[test]
+        fn test_diagonal_distance_should_use_manhattan_distance() {
+            // Given
+            let right = Position { x: 5, y: 1 };
+            let left = Position { x: 2, y: 3 };
+
+            // When
+            let result = right.distance(&left);
+
+            // Then
+            assert_eq!(5, result);
+        }
+
     }
 
     mod map {
         use super::*;
 
-        #[test]
-        fn test_same_start_and_goal_should_whatever() {
-            // Given
-            let map = Map { amphipods: vec![] };
+        mod distance {
+            use super::*;
 
-            let start = Position { x: 1, y: 1 };
+            #[test]
+            fn test_same_start_and_goal_should_generate_empty_path() {
+                // Given
+                let map = Map { amphipods: vec![] };
 
-            // When
-            let result: Vec<&Position> = map.path(&start, &start).collect();
+                let start = Position { x: 1, y: 1 };
 
-            // Then
-            let expected: Vec<&Position> = vec![];
-            assert_eq!(expected, result);
+                // When
+                let result: Vec<Position> = map.path(&start, &start);
+
+                // Then
+                let expected: Vec<Position> = vec![];
+                assert_eq!(expected, result);
+            }
+
+            #[test]
+            fn test_start_single_step_left_of_goal_should_have_single_position() {
+                // Given
+                let map = Map { amphipods: vec![] };
+
+                let start = Position { x: 1, y: 1 };
+                let goal = Position { x: 2, y: 1 };
+
+                // When
+                let result: Vec<Position> = map.path(&start, &goal);
+
+                // Then
+                let expected: Vec<Position> = vec![ Position { x: 2, y: 1} ];
+                assert_eq!(expected, result);
+            }
+
+            #[test]
+            fn test_start_single_step_right_of_goal_should_have_single_position() {
+                // Given
+                let map = Map { amphipods: vec![] };
+
+                let start = Position { x: 2, y: 1 };
+                let goal = Position { x: 1, y: 1 };
+
+                // When
+                let result: Vec<Position> = map.path(&start, &goal);
+
+                // Then
+                let expected: Vec<Position> = vec![ Position { x: 1, y: 1} ];
+                assert_eq!(expected, result);
+            }
+
+            #[test]
+            fn test_start_single_step_over_goal_should_have_single_position() {
+                // Given
+                let map = Map { amphipods: vec![] };
+
+                let start = Position { x: 3, y: 1 };
+                let goal = Position { x: 3, y: 2 };
+
+                // When
+                let result: Vec<Position> = map.path(&start, &goal);
+
+                // Then
+                let expected: Vec<Position> = vec![ Position { x: 3, y: 2} ];
+                assert_eq!(expected, result);
+            }
+
+            #[test]
+            fn test_start_single_step_under_goal_should_have_single_position() {
+                // Given
+                let map = Map { amphipods: vec![] };
+
+                let start = Position { x: 3, y: 2 };
+                let goal = Position { x: 3, y: 1 };
+
+                // When
+                let result: Vec<Position> = map.path(&start, &goal);
+
+                // Then
+                let expected: Vec<Position> = vec![ Position { x: 3, y: 1} ];
+                assert_eq!(expected, result);
+            }
+
+            #[test]
+            fn test_up_up_then_left_should_have_three_positions() {
+                //! #############
+                //! #.Gx........#
+                //! ###x#.#.#.###
+                //! ###S#.#.#.###
+                //! #############
+
+                // Given
+                let map = Map { amphipods: vec![] };
+
+                let start = Position { x: 3, y: 3 };
+                let goal = Position { x: 2, y: 1 };
+
+                // When
+                let result: Vec<Position> = map.path(&start, &goal);
+
+                // Then
+                let expected: Vec<Position> = vec![
+                    Position { x: 2, y: 1},
+                    Position { x: 3, y: 1},
+                    Position { x: 3, y: 2},
+                ];
+                assert_eq!(expected, result);
+            }
+
+            #[test]
+            fn test_left_left_then_down_down_should_have_four_positions() {
+                //! #############
+                //! #........xxS#
+                //! ###.#.#.#x###
+                //! ###.#.#.#G###
+                //! #############
+
+                // Given
+                let map = Map { amphipods: vec![] };
+
+                let start = Position { x: 12, y: 1 };
+                let goal = Position { x: 10, y: 3 };
+
+                // When
+                let result: Vec<Position> = map.path(&start, &goal);
+
+                // Then
+                let expected: Vec<Position> = vec![
+                    Position { x: 10, y: 1},
+                    Position { x: 11, y: 1},
+                    Position { x: 10, y: 2},
+                    Position { x: 10, y: 3},
+                ];
+                assert_eq!(expected, result);
+            }
+        }
+
+        mod path_is_open {
+            use super::*;
+
+            #[test]
+            fn test_open_path_should_be_true() {
+                //! #############
+                //! #Sxxxx..B...#
+                //! ###.#x#.#.###
+                //! ###.#G#.#.###
+                //! #############
+
+                // Given
+                let map = Map {
+                    amphipods: vec![
+                        Amphipod {
+                            position: Position { x: 9, y: 1 },
+                            color: Color::Bronze,
+                        }
+                    ]
+                };
+
+                let start = Position { x: 1, y: 1 };
+                let goal = Position { x: 6, y: 3 };
+
+                // When
+                let result = map.path_is_open(&start, &goal);
+
+                // Then
+                assert_eq!(true, result)
+            }
+
+            #[test]
+            fn test_blocked_path_should_be_false() {
+                //! #############
+                //! #SxxBx......#
+                //! ###.#x#.#.###
+                //! ###.#G#.#.###
+                //! #############
+
+                // Given
+                let map = Map {
+                    amphipods: vec![
+                        Amphipod {
+                            position: Position { x: 5, y: 1 },
+                            color: Color::Bronze,
+                        }
+                    ]
+                };
+
+                let start = Position { x: 1, y: 1 };
+                let goal = Position { x: 6, y: 3 };
+
+                // When
+                let result = map.path_is_open(&start, &goal);
+
+                // Then
+                assert_eq!(false, result)
+            }
         }
     }
 
