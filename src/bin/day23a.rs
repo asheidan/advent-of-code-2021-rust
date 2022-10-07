@@ -81,7 +81,7 @@ impl Amphipod {
 /// This should probably also be easily cloned so I can use this as the "job token" if I want to
 /// distribute the work between workers.
 struct Map {
-    amphipods: Vec<Amphipod>,
+    amphipods: [Amphipod; 8],
 }
 
 impl Map {
@@ -137,7 +137,7 @@ impl Map {
 impl FromIterator<String> for Map {
     fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
 
-        let amphipods: Vec<Amphipod> = iter.into_iter().enumerate()
+        let amphipods = iter.into_iter().enumerate()
             .map(|(y, line)| {
                 line.chars().enumerate()
                     .filter_map(|(x, c)| {
@@ -152,10 +152,15 @@ impl FromIterator<String> for Map {
                         }
                     }).collect::<Vec<Amphipod>>()
             })
-            .flatten()
-            .collect();
+            .flatten();
 
-        Self { amphipods }
+        let mut array = [ Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false }; 8 ];
+
+        for (i, a) in amphipods.enumerate() {
+            array[i] = a;
+        }
+
+        Self { amphipods: array }
     }
 }
 
@@ -275,13 +280,17 @@ mod test {
     mod map {
         use super::*;
 
+        fn empty_map() -> Map {
+            Map { amphipods: [Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false }; 8] }
+        }
+
         mod distance {
             use super::*;
 
             #[test]
             fn test_same_start_and_goal_should_generate_empty_path() {
                 // Given
-                let map = Map { amphipods: vec![] };
+                let map = empty_map();
 
                 let start = Position { x: 1, y: 1 };
 
@@ -296,7 +305,7 @@ mod test {
             #[test]
             fn test_start_single_step_left_of_goal_should_have_single_position() {
                 // Given
-                let map = Map { amphipods: vec![] };
+                let map = empty_map();
 
                 let start = Position { x: 1, y: 1 };
                 let goal = Position { x: 2, y: 1 };
@@ -312,7 +321,7 @@ mod test {
             #[test]
             fn test_start_single_step_right_of_goal_should_have_single_position() {
                 // Given
-                let map = Map { amphipods: vec![] };
+                let map = empty_map();
 
                 let start = Position { x: 2, y: 1 };
                 let goal = Position { x: 1, y: 1 };
@@ -328,7 +337,7 @@ mod test {
             #[test]
             fn test_start_single_step_over_goal_should_have_single_position() {
                 // Given
-                let map = Map { amphipods: vec![] };
+                let map = empty_map();
 
                 let start = Position { x: 3, y: 1 };
                 let goal = Position { x: 3, y: 2 };
@@ -344,7 +353,7 @@ mod test {
             #[test]
             fn test_start_single_step_under_goal_should_have_single_position() {
                 // Given
-                let map = Map { amphipods: vec![] };
+                let map = empty_map();
 
                 let start = Position { x: 3, y: 2 };
                 let goal = Position { x: 3, y: 1 };
@@ -366,7 +375,7 @@ mod test {
                 //! #############
 
                 // Given
-                let map = Map { amphipods: vec![] };
+                let map = empty_map();
 
                 let start = Position { x: 3, y: 3 };
                 let goal = Position { x: 2, y: 1 };
@@ -392,7 +401,7 @@ mod test {
                 //! #############
 
                 // Given
-                let map = Map { amphipods: vec![] };
+                let map = empty_map();
 
                 let start = Position { x: 12, y: 1 };
                 let goal = Position { x: 10, y: 3 };
@@ -424,12 +433,19 @@ mod test {
 
                 // Given
                 let map = Map {
-                    amphipods: vec![
+                    amphipods: [
                         Amphipod {
                             position: Position { x: 9, y: 1 },
                             color: Color::Bronze,
                             has_moved: true,
-                        }
+                        },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
                     ]
                 };
 
@@ -453,12 +469,19 @@ mod test {
 
                 // Given
                 let map = Map {
-                    amphipods: vec![
+                    amphipods: [
                         Amphipod {
                             position: Position { x: 5, y: 1 },
                             color: Color::Bronze,
                             has_moved: true,
-                        }
+                        },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
+                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
                     ]
                 };
 
