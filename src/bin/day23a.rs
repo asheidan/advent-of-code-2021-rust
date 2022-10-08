@@ -1,10 +1,10 @@
 use std::fmt;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::iter::Iterator;
-use std::io::BufRead;
 use std::vec::Vec;
 
-const CAVE: &str = 
-"#############
+const CAVE: &str = "#############
 #...........#
 ###.#.#.#.###
   #.#.#.#.#
@@ -38,8 +38,7 @@ struct Position {
 
 impl Position {
     fn distance(&self, other: &Position) -> i64 {
-        ((self.y as i64) - (other.y as i64)).abs()
-            + ((self.x as i64) - (other.x as i64)).abs()
+        ((self.y as i64) - (other.y as i64)).abs() + ((self.x as i64) - (other.x as i64)).abs()
     }
 }
 
@@ -61,15 +60,25 @@ impl Amphipod {
 
     fn possible_moves(&self, map: &Map) -> Vec<Position> {
         let moves: Vec<Position> = match (self.position.y, self.has_moved) {
-            (1, _)     => (2..=3).map(|y| Position { x: self.home_column(), y } ).collect(),
-            (_, false) => POSSIBLE_SPOTS.iter().map(|x| Position { x: *x as usize, y: 1} ).collect(),
-            (_, _)     => vec![],
+            (1, _) => (2..=3)
+                .map(|y| Position {
+                    x: self.home_column(),
+                    y,
+                })
+                .collect(),
+            (_, false) => POSSIBLE_SPOTS
+                .iter()
+                .map(|x| Position {
+                    x: *x as usize,
+                    y: 1,
+                })
+                .collect(),
+            (_, _) => vec![],
         };
 
-        let valid_moves = moves.into_iter()
-            .filter(|p| {
-                map.path_is_open(&self.position, p)
-            })
+        let valid_moves = moves
+            .into_iter()
+            .filter(|p| map.path_is_open(&self.position, p))
             .collect();
 
         valid_moves
@@ -99,23 +108,25 @@ impl Map {
 
         let path_position = self.path(start, goal);
 
-        ! self.amphipods.iter().any(|amphipod| { path_position.contains(&amphipod.position) })
+        !self
+            .amphipods
+            .iter()
+            .any(|amphipod| path_position.contains(&amphipod.position))
     }
 
     fn path(&self, start: &Position, goal: &Position) -> Vec<Position> {
         let horisontal_positions = match start.x < goal.x {
-            true  => (start.x+1)..=(goal.x),
-            false => (goal.x)..=(start.x-1),
-        }.map(|x| Position { x, y: 1 } );
+            true => (start.x + 1)..=(goal.x),
+            false => (goal.x)..=(start.x - 1),
+        }
+        .map(|x| Position { x, y: 1 });
 
         let (x, ys) = match start.y > goal.y {
-            true  => (start.x, (goal.y)..=(start.y-1)),
-            false => (goal.x, (start.y+1)..=(goal.y)),
+            true => (start.x, (goal.y)..=(start.y - 1)),
+            false => (goal.x, (start.y + 1)..=(goal.y)),
         };
 
-        println!("{:?}", ys);
-
-        let vertical_positions = ys.map(|y| Position { x, y } );
+        let vertical_positions = ys.map(|y| Position { x, y });
 
         horisontal_positions.chain(vertical_positions).collect()
     }
@@ -124,7 +135,9 @@ impl Map {
         let mut cache: [bool; 8] = [false; 8];
 
         self.amphipods.iter().for_each(|amphipod| {
-            if amphipod.home_column() == amphipod.position.x && (2..=3).contains(&amphipod.position.y)  {
+            if amphipod.home_column() == amphipod.position.x
+                && (2..=3).contains(&amphipod.position.y)
+            {
                 let index: usize = 2 * amphipod.color as usize + (amphipod.position.y - 2);
                 cache[index] = true;
             }
@@ -132,29 +145,62 @@ impl Map {
 
         cache.iter().all(|b| *b)
     }
+
+    fn empty() -> Self {
+        Map {
+            amphipods: [Amphipod {
+                color: Color::Amber,
+                position: Position { y: 0, x: 0 },
+                has_moved: false,
+            }; 8],
+        }
+    }
 }
 
 impl FromIterator<String> for Map {
     fn from_iter<T: IntoIterator<Item = String>>(iter: T) -> Self {
-
-        let amphipods = iter.into_iter().enumerate()
+        let amphipods = iter
+            .into_iter()
+            .enumerate()
             .map(|(y, line)| {
-                line.chars().enumerate()
+                line.chars()
+                    .enumerate()
                     .filter_map(|(x, c)| {
                         let position = Position { x, y };
 
                         match c {
-                            'A' => Some(Amphipod { position, color: Color::Amber, has_moved: false }),
-                            'B' => Some(Amphipod { position, color: Color::Bronze, has_moved: false }),
-                            'C' => Some(Amphipod { position, color: Color::Copper, has_moved: false }),
-                            'D' => Some(Amphipod { position, color: Color::Desert, has_moved: false }),
+                            'A' => Some(Amphipod {
+                                position,
+                                color: Color::Amber,
+                                has_moved: false,
+                            }),
+                            'B' => Some(Amphipod {
+                                position,
+                                color: Color::Bronze,
+                                has_moved: false,
+                            }),
+                            'C' => Some(Amphipod {
+                                position,
+                                color: Color::Copper,
+                                has_moved: false,
+                            }),
+                            'D' => Some(Amphipod {
+                                position,
+                                color: Color::Desert,
+                                has_moved: false,
+                            }),
                             _ => None,
                         }
-                    }).collect::<Vec<Amphipod>>()
+                    })
+                    .collect::<Vec<Amphipod>>()
             })
             .flatten();
 
-        let mut array = [ Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false }; 8 ];
+        let mut array = [Amphipod {
+            color: Color::Amber,
+            position: Position { y: 0, x: 0 },
+            has_moved: false,
+        }; 8];
 
         for (i, a) in amphipods.enumerate() {
             array[i] = a;
@@ -179,42 +225,78 @@ impl fmt::Display for Map {
     }
 }
 
-/*
-fn easiest_moves(map: &Map, current_minimum: i64) -> i64 {
+fn easiest_moves(map: &Map, current_cost: i64, current_minimum: i64, number_of_moves: i32) -> i64 {
     if map.amphipods_organized() {
-        return current_minimum;
+        println!("{}", current_cost);
+        return current_cost;
     }
 
+    /*
+    println!(
+        "{}{:<2}{:>11}\n{:>13}",
+        map, number_of_moves, current_cost, current_minimum
+    );
+    */
     let mut local_minimum = current_minimum;
-    let mut map_copy: Map = Map { amphipods: [ Amphipod{}; 8 ] }
+    let mut map_copy = Map::empty();
 
-    for n in 0..map.amphipods.len() {
-        let moves = map.amphipods.get(n).expect("Missing amphipod").possible_moves(map);
+    for n in 0..8
+        //map.amphipods.len()
+    {
+        let current_position = &map.amphipods[n].position;
+        let energy_cost = map.amphipods[n].energy_cost();
+
+        let moves = map
+            .amphipods
+            .get(n)
+            .expect("Missing amphipod")
+            .possible_moves(map);
+        //if moves.is_empty() {
+        //    eprintln!("Amphipod {} can't move.", n);
+        //}
         for goal in moves {
-            let mut map_copy = map.clone_into();
-            let mut amphipod = map_copy.amphipods.get_mut(n).expect("Missing amphipod");
-            let move_cost = amphipod.position.distance(&goal) * amphipod.energy_cost();
+            let move_cost = current_position.distance(&goal) * energy_cost;
 
-            local_minimum = easiest_moves(map_copy, current_minimum + move_cost);
+            if (current_cost + move_cost) >= local_minimum {
+                // Too expensive ignoring this move
+                continue;
+            }
+
+            //map_copy.amphipods.cop
+            // TODO: Benchmark copy_from_slice, clone_from aso
+            map_copy.amphipods.clone_from(&map.amphipods);
+            map_copy.amphipods[n].position = goal;
+            map_copy.amphipods[n].has_moved = true;
+
+            local_minimum = easiest_moves(
+                &map_copy,
+                current_cost + move_cost,
+                local_minimum,
+                number_of_moves + 1,
+            );
         }
-
     }
 
-    return local_minimum;
+    /*
+    println!(
+        "{}{:<2}{:>11}\n{:>13}",
+        map, number_of_moves, current_cost, local_minimum
+    );
+    */
+    i64::min(current_minimum, local_minimum)
 }
-*/
-
 
 fn main() {
-    let stdin = std::io::stdin();
-    let map: Map = stdin.lock()
-        .lines()
-        .filter_map(|s| Some(s.unwrap()))
-        .collect();
+    let args: Vec<String> = std::env::args().collect();
 
-    //let result = easiest_moves(&map, std::i64::MAX);
+    let filename = args.get(1).expect("missing filename");
+    let input_file = File::open(filename).expect("failed to open file");
+    let reader = BufReader::new(input_file);
+    let map: Map = reader.lines().filter_map(|s| Some(s.unwrap())).collect();
 
-    println!("{}", map);
+    let result = easiest_moves(&map, 0, std::i64::MAX, 0);
+
+    println!("{}", result);
 }
 
 #[cfg(test)]
@@ -274,15 +356,10 @@ mod test {
             // Then
             assert_eq!(5, result);
         }
-
     }
 
     mod map {
         use super::*;
-
-        fn empty_map() -> Map {
-            Map { amphipods: [Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false }; 8] }
-        }
 
         mod distance {
             use super::*;
@@ -290,7 +367,7 @@ mod test {
             #[test]
             fn test_same_start_and_goal_should_generate_empty_path() {
                 // Given
-                let map = empty_map();
+                let map = Map::empty();
 
                 let start = Position { x: 1, y: 1 };
 
@@ -305,7 +382,7 @@ mod test {
             #[test]
             fn test_start_single_step_left_of_goal_should_have_single_position() {
                 // Given
-                let map = empty_map();
+                let map = Map::empty();
 
                 let start = Position { x: 1, y: 1 };
                 let goal = Position { x: 2, y: 1 };
@@ -314,14 +391,14 @@ mod test {
                 let result: Vec<Position> = map.path(&start, &goal);
 
                 // Then
-                let expected: Vec<Position> = vec![ Position { x: 2, y: 1} ];
+                let expected: Vec<Position> = vec![Position { x: 2, y: 1 }];
                 assert_eq!(expected, result);
             }
 
             #[test]
             fn test_start_single_step_right_of_goal_should_have_single_position() {
                 // Given
-                let map = empty_map();
+                let map = Map::empty();
 
                 let start = Position { x: 2, y: 1 };
                 let goal = Position { x: 1, y: 1 };
@@ -330,14 +407,14 @@ mod test {
                 let result: Vec<Position> = map.path(&start, &goal);
 
                 // Then
-                let expected: Vec<Position> = vec![ Position { x: 1, y: 1} ];
+                let expected: Vec<Position> = vec![Position { x: 1, y: 1 }];
                 assert_eq!(expected, result);
             }
 
             #[test]
             fn test_start_single_step_over_goal_should_have_single_position() {
                 // Given
-                let map = empty_map();
+                let map = Map::empty();
 
                 let start = Position { x: 3, y: 1 };
                 let goal = Position { x: 3, y: 2 };
@@ -346,14 +423,14 @@ mod test {
                 let result: Vec<Position> = map.path(&start, &goal);
 
                 // Then
-                let expected: Vec<Position> = vec![ Position { x: 3, y: 2} ];
+                let expected: Vec<Position> = vec![Position { x: 3, y: 2 }];
                 assert_eq!(expected, result);
             }
 
             #[test]
             fn test_start_single_step_under_goal_should_have_single_position() {
                 // Given
-                let map = empty_map();
+                let map = Map::empty();
 
                 let start = Position { x: 3, y: 2 };
                 let goal = Position { x: 3, y: 1 };
@@ -362,7 +439,7 @@ mod test {
                 let result: Vec<Position> = map.path(&start, &goal);
 
                 // Then
-                let expected: Vec<Position> = vec![ Position { x: 3, y: 1} ];
+                let expected: Vec<Position> = vec![Position { x: 3, y: 1 }];
                 assert_eq!(expected, result);
             }
 
@@ -375,7 +452,7 @@ mod test {
                 //! #############
 
                 // Given
-                let map = empty_map();
+                let map = Map::empty();
 
                 let start = Position { x: 3, y: 3 };
                 let goal = Position { x: 2, y: 1 };
@@ -385,9 +462,9 @@ mod test {
 
                 // Then
                 let expected: Vec<Position> = vec![
-                    Position { x: 2, y: 1},
-                    Position { x: 3, y: 1},
-                    Position { x: 3, y: 2},
+                    Position { x: 2, y: 1 },
+                    Position { x: 3, y: 1 },
+                    Position { x: 3, y: 2 },
                 ];
                 assert_eq!(expected, result);
             }
@@ -401,7 +478,7 @@ mod test {
                 //! #############
 
                 // Given
-                let map = empty_map();
+                let map = Map::empty();
 
                 let start = Position { x: 12, y: 1 };
                 let goal = Position { x: 10, y: 3 };
@@ -411,10 +488,10 @@ mod test {
 
                 // Then
                 let expected: Vec<Position> = vec![
-                    Position { x: 10, y: 1},
-                    Position { x: 11, y: 1},
-                    Position { x: 10, y: 2},
-                    Position { x: 10, y: 3},
+                    Position { x: 10, y: 1 },
+                    Position { x: 11, y: 1 },
+                    Position { x: 10, y: 2 },
+                    Position { x: 10, y: 3 },
                 ];
                 assert_eq!(expected, result);
             }
@@ -439,14 +516,42 @@ mod test {
                             color: Color::Bronze,
                             has_moved: true,
                         },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                    ]
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                    ],
                 };
 
                 let start = Position { x: 1, y: 1 };
@@ -475,14 +580,42 @@ mod test {
                             color: Color::Bronze,
                             has_moved: true,
                         },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                        Amphipod { color: Color::Amber, position: Position { y: 0, x: 0 }, has_moved: false },
-                    ]
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                        Amphipod {
+                            color: Color::Amber,
+                            position: Position { y: 0, x: 0 },
+                            has_moved: false,
+                        },
+                    ],
                 };
 
                 let start = Position { x: 1, y: 1 };
@@ -495,7 +628,7 @@ mod test {
                 assert_eq!(false, result)
             }
         }
-        
+
         mod amphipods_organized {
             use super::*;
 
@@ -508,9 +641,10 @@ mod test {
                     "###A#B#C#D###",
                     "  #A#B#C#D#",
                     "  #########",
-                ].into_iter()
-                    .map(String::from)
-                    .collect();
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect();
 
                 // When
                 let result = map.amphipods_organized();
@@ -528,9 +662,10 @@ mod test {
                     "###B#A#C#D###",
                     "  #A#B#C#D#",
                     "  #########",
-                ].into_iter()
-                    .map(String::from)
-                    .collect();
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect();
 
                 // When
                 let result = map.amphipods_organized();
@@ -540,5 +675,4 @@ mod test {
             }
         }
     }
-
 }
