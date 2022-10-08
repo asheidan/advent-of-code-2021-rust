@@ -7,9 +7,15 @@ use std::vec::Vec;
 const CAVE: &str = "#############
 #...........#
 ###.#.#.#.###
-  #.#.#.#.#
+  #.#.#.#.#  
+  #.#.#.#.#  
+  #.#.#.#.#  
   #########";
 const POSSIBLE_SPOTS: [i32; 7] = [1, 2, 4, 6, 8, 10, 11];
+
+const EXTRA_CAVE: &str =
+"  #D#C#B#A#
+  #D#B#A#C#";
 
 #[derive(Clone, Copy, Hash, Eq, PartialEq, PartialOrd)]
 enum Color {
@@ -60,7 +66,7 @@ impl Amphipod {
 
     fn possible_moves(&self, map: &Map) -> Vec<Position> {
         let moves: Vec<Position> = match (self.position.y, self.has_moved) {
-            (1, _) => (2..=3)
+            (1, _) => (2..=5)
                 .map(|y| Position {
                     x: self.home_column(),
                     y,
@@ -90,7 +96,7 @@ impl Amphipod {
 /// This should probably also be easily cloned so I can use this as the "job token" if I want to
 /// distribute the work between workers.
 struct Map {
-    amphipods: [Amphipod; 8],
+    amphipods: [Amphipod; 16],
 }
 
 impl Map {
@@ -132,13 +138,13 @@ impl Map {
     }
 
     fn amphipods_organized(&self) -> bool {
-        let mut cache: [bool; 8] = [false; 8];
+        let mut cache: [bool; 16] = [false; 16];
 
         self.amphipods.iter().for_each(|amphipod| {
             if amphipod.home_column() == amphipod.position.x
-                && (2..=3).contains(&amphipod.position.y)
+                && (2..=5).contains(&amphipod.position.y)
             {
-                let index: usize = 2 * amphipod.color as usize + (amphipod.position.y - 2);
+                let index: usize = 4 * amphipod.color as usize + (amphipod.position.y - 2);
                 cache[index] = true;
             }
         });
@@ -152,7 +158,7 @@ impl Map {
                 color: Color::Amber,
                 position: Position { y: 0, x: 0 },
                 has_moved: false,
-            }; 8],
+            }; 16],
         }
     }
 }
@@ -200,7 +206,7 @@ impl FromIterator<String> for Map {
             color: Color::Amber,
             position: Position { y: 0, x: 0 },
             has_moved: false,
-        }; 8];
+        }; 16];
 
         for (i, a) in amphipods.enumerate() {
             array[i] = a;
@@ -240,7 +246,7 @@ fn easiest_moves(map: &Map, current_cost: i64, current_minimum: i64, number_of_m
     let mut local_minimum = current_minimum;
     let mut map_copy = Map::empty();
 
-    for n in 0..8
+    for n in 0..16
         //map.amphipods.len()
     {
         let current_position = &map.amphipods[n].position;
@@ -292,7 +298,10 @@ fn main() {
     let filename = args.get(1).expect("missing filename");
     let input_file = File::open(filename).expect("failed to open file");
     let reader = BufReader::new(input_file);
-    let map: Map = reader.lines().filter_map(|s| Some(s.unwrap())).collect();
+    let mut lines: Vec<_> = reader.lines().filter_map(|s| Some(s.unwrap())).collect();
+    EXTRA_CAVE.lines().for_each(|l| lines.insert(lines.len() - 2, l.to_string()));
+
+    let map: Map = lines.into_iter().collect();
 
     let result = easiest_moves(&map, 0, std::i64::MAX, 0);
 
