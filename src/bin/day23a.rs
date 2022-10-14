@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -30,7 +31,7 @@ impl Color {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Debug, Eq, Hash)]
 struct Position {
     y: usize,
     x: usize,
@@ -42,7 +43,7 @@ impl Position {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Hash)]
 struct Amphipod {
     position: Position,
     color: Color,
@@ -73,7 +74,7 @@ impl Amphipod {
                     y: 1,
                 })
                 .collect(),
-            (_, _) => vec![],
+            (_, true) => vec![],
         };
 
         let valid_moves = moves
@@ -89,6 +90,7 @@ impl Amphipod {
 ///
 /// This should probably also be easily cloned so I can use this as the "job token" if I want to
 /// distribute the work between workers.
+#[derive(Eq, Hash, PartialEq, Copy, Clone)]
 struct Map {
     amphipods: [Amphipod; 8],
 }
@@ -225,65 +227,70 @@ impl fmt::Display for Map {
     }
 }
 
-fn easiest_moves(map: &Map, current_cost: i64, current_minimum: i64, number_of_moves: i32) -> i64 {
+/// Return the least energy cost needed to reach the goal state
+fn easiest_moves(map: &Map, number_of_moves: i64, cache: &mut HashMap<Map, i64>) -> Option<i64> {
+    if let Some(cost) = cache.get(map) {
+        //eprintln!("State already in cache: {}", cache.len());
+
+        return Some(*cost);
+    }
+
     if map.amphipods_organized() {
-        println!("{}", current_cost);
-        return current_cost;
+        eprintln!("Reached order: {}", number_of_moves);
+
+        cache.insert(*map, 0);
+
+        eprintln!("States in cache: {}", cache.len());
+
+        return Some(0);
     }
 
-    /*
-    println!(
-        "{}{:<2}{:>11}\n{:>13}",
-        map, number_of_moves, current_cost, current_minimum
-    );
-    */
-    let mut local_minimum = current_minimum;
-    let mut map_copy = Map::empty();
+    let lowest_cost_maybe = (0..8)
+        .filter_map(|n| {
+            let current_position = &map.amphipods[n].position;
+            let energy_cost = map.amphipods[n].energy_cost();
 
-    for n in 0..8
-        //map.amphipods.len()
-    {
-        let current_position = &map.amphipods[n].position;
-        let energy_cost = map.amphipods[n].energy_cost();
+            let moves = map
+                .amphipods
+                .get(n)
+                .expect("Missing amphipod")
+                .possible_moves(map);
 
-        let moves = map
-            .amphipods
-            .get(n)
-            .expect("Missing amphipod")
-            .possible_moves(map);
-        //if moves.is_empty() {
-        //    eprintln!("Amphipod {} can't move.", n);
-        //}
-        for goal in moves {
-            let move_cost = current_position.distance(&goal) * energy_cost;
+            moves
+                .iter()
+                .filter_map(|goal| {
+                    let move_cost = current_position.distance(&goal) * energy_cost;
 
-            if (current_cost + move_cost) >= local_minimum {
-                // Too expensive ignoring this move
-                continue;
-            }
+                    let mut map_copy = map.clone();
+                    map_copy.amphipods[n].position = *goal;
+                    map_copy.amphipods[n].has_moved = true;
 
-            //map_copy.amphipods.cop
-            // TODO: Benchmark copy_from, clone_from aso
-            map_copy.amphipods.clone_from(&map.amphipods);
-            map_copy.amphipods[n].position = goal;
-            map_copy.amphipods[n].has_moved = true;
+                    let downstream_cost_maybe =
+                        easiest_moves(&map_copy, number_of_moves + 1, cache);
 
-            local_minimum = easiest_moves(
-                &map_copy,
-                current_cost + move_cost,
-                local_minimum,
-                number_of_moves + 1,
-            );
+                    if let Some(downstream_cost) = downstream_cost_maybe {
+                        //eprintln!("{} + {}", move_cost, downstream_cost);
+                        Some(move_cost + downstream_cost)
+                    } else {
+                        None
+                    }
+                })
+                .min()
+        })
+        .min();
+
+    if let Some(lowest_cost) = lowest_cost_maybe {
+        cache.insert(*map, lowest_cost);
+
+        if number_of_moves < 3 {
+            eprint!("\n{}", map);
+            eprintln!( "States in cache: {} moves: {} cost: {}", cache.len(), number_of_moves, lowest_cost);
         }
+
+        return Some(lowest_cost);
     }
 
-    /*
-    println!(
-        "{}{:<2}{:>11}\n{:>13}",
-        map, number_of_moves, current_cost, local_minimum
-    );
-    */
-    i64::min(current_minimum, local_minimum)
+    None
 }
 
 fn main() {
@@ -294,9 +301,12 @@ fn main() {
     let reader = BufReader::new(input_file);
     let map: Map = reader.lines().filter_map(|s| Some(s.unwrap())).collect();
 
-    let result = easiest_moves(&map, 0, std::i64::MAX, 0);
+    let mut state_cache: HashMap<Map, i64> = HashMap::new();
+    //let lock = RwLock::new(state_cache);
 
-    println!("{}", result);
+    if let Some(result) = easiest_moves(&map, 0, &mut state_cache) {
+        println!("{}", result);
+    }
 }
 
 #[cfg(test)]
