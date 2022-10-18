@@ -4,6 +4,9 @@ use std::io::{BufRead, BufReader};
 use std::iter::Iterator;
 use std::vec::Vec;
 
+use priority_queue::PriorityQueue;
+
+
 const CAVE: &str = "#############
 #...........#
 ###.#.#.#.###
@@ -30,7 +33,7 @@ impl Color {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Debug, Hash)]
 struct Position {
     y: usize,
     x: usize,
@@ -42,7 +45,7 @@ impl Position {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Hash)]
 struct Amphipod {
     position: Position,
     color: Color,
@@ -89,6 +92,7 @@ impl Amphipod {
 ///
 /// This should probably also be easily cloned so I can use this as the "job token" if I want to
 /// distribute the work between workers.
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 struct Map {
     amphipods: [Amphipod; 8],
 }
@@ -225,65 +229,60 @@ impl fmt::Display for Map {
     }
 }
 
-fn easiest_moves(map: &Map, current_cost: i64, current_minimum: i64, number_of_moves: i32) -> i64 {
-    if map.amphipods_organized() {
-        println!("{}", current_cost);
-        return current_cost;
-    }
+/// Return the heuristic for finishing this map.
+///
+/// Since this is used for prioritizing which states that should be examined in the A*-algorithm
+/// this needs to be close to the actual cost of finishing this map and never higher than the
+/// actual cost.
+fn heuristic(map: &Map) -> i64 {
+    map.amphipods.iter().map(|a| {
+        let y = match a.position.x == a.home_column() {
+            true => usize::max(2, a.position.y),
+            false => 0,  // Ugly hack to get distance of first moving into corridor, then into room
+        };
+        let goal = Position{ x: a.home_column(), y };
+        goal.distance(&a.position) * a.energy_cost()
+    }).sum()
+}
 
-    /*
-    println!(
-        "{}{:<2}{:>11}\n{:>13}",
-        map, number_of_moves, current_cost, current_minimum
-    );
-    */
-    let mut local_minimum = current_minimum;
-    let mut map_copy = Map::empty();
+fn easiest_moves(map: Map) -> i64 {
 
-    for n in 0..8
-        //map.amphipods.len()
-    {
-        let current_position = &map.amphipods[n].position;
-        let energy_cost = map.amphipods[n].energy_cost();
+    let mut queue: PriorityQueue<(Map, i64), i64> = PriorityQueue::<_, _>::new();
+    queue.push((map, 0), 0 + heuristic(&map));
 
-        let moves = map
-            .amphipods
-            .get(n)
-            .expect("Missing amphipod")
-            .possible_moves(map);
-        //if moves.is_empty() {
-        //    eprintln!("Amphipod {} can't move.", n);
-        //}
-        for goal in moves {
-            let move_cost = current_position.distance(&goal) * energy_cost;
+    let mut minimal_cost = std::i64::MAX;
 
-            if (current_cost + move_cost) >= local_minimum {
-                // Too expensive ignoring this move
-                continue;
-            }
+    while let Some(((map, cost), _priority)) = queue.pop() {
+        //println!("{}{}, {}", map, cost, _priority);
 
-            //map_copy.amphipods.cop
-            // TODO: Benchmark copy_from, clone_from aso
-            map_copy.amphipods.clone_from(&map.amphipods);
-            map_copy.amphipods[n].position = goal;
-            map_copy.amphipods[n].has_moved = true;
-
-            local_minimum = easiest_moves(
-                &map_copy,
-                current_cost + move_cost,
-                local_minimum,
-                number_of_moves + 1,
-            );
+        if map.amphipods_organized() {
+            println!("{}", cost);
+            println!("q: {}", queue.len());
+            minimal_cost = i64::min(minimal_cost, cost);
         }
+
+        map.amphipods.iter().enumerate().for_each(|(n, a)| {
+            let current_position = &a.position;
+            let energy_cost = a.energy_cost();
+
+            a.possible_moves(&map).iter().for_each(|goal| {
+                let map_cost = cost + current_position.distance(&goal) * energy_cost;
+
+                let mut map_copy = map;  // Copy
+                map_copy.amphipods[n].position = *goal;
+                map_copy.amphipods[n].has_moved = true;
+
+                let heuristic_cost = map_cost + heuristic(&map_copy);
+
+                if (map_cost + heuristic_cost) <= minimal_cost {
+                    queue.push((map_copy, map_cost), - heuristic_cost);
+                }
+
+            });
+        });
     }
 
-    /*
-    println!(
-        "{}{:<2}{:>11}\n{:>13}",
-        map, number_of_moves, current_cost, local_minimum
-    );
-    */
-    i64::min(current_minimum, local_minimum)
+    minimal_cost
 }
 
 fn main() {
@@ -294,7 +293,7 @@ fn main() {
     let reader = BufReader::new(input_file);
     let map: Map = reader.lines().filter_map(|s| Some(s.unwrap())).collect();
 
-    let result = easiest_moves(&map, 0, std::i64::MAX, 0);
+    let result = easiest_moves(map);
 
     println!("{}", result);
 }
@@ -673,6 +672,94 @@ mod test {
                 // Then
                 assert_eq!(false, result);
             }
+        }
+    }
+
+    mod heuristic {
+        use super::*;
+
+        #[test]
+        fn goal_state_should_be_zero() {
+            // Given
+            let map: Map = vec![
+                "#############",
+                "#...........#",
+                "###A#B#C#D###",
+                "  #A#B#C#D#",
+                "  #########",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+            // When
+            let result = heuristic(&map);
+
+            // Then
+            assert_eq!(0, result);
+        }
+
+        #[test]
+        fn amber_amphipod_out_of_place_should_be_2() {
+            // Given
+            let map: Map = vec![
+                "#############",
+                "#.A.........#",
+                "###.#B#C#D###",
+                "  #A#B#C#D#",
+                "  #########",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+            // When
+            let result = heuristic(&map);
+
+            // Then
+            assert_eq!(2, result);
+        }
+
+        #[test]
+        fn bronze_amphipod_out_of_place_should_be_correct() {
+            // Given
+            let map: Map = vec![
+                "#############",
+                "#.........B.#",
+                "###A#.#C#D###",
+                "  #A#B#C#D#",
+                "  #########",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+            // When
+            let result = heuristic(&map);
+
+            // Then
+            assert_eq!(60, result);
+        }
+
+        #[test]
+        fn switching_rooms_should_be_correct() {
+            // Given
+            let map: Map = vec![
+                "#############",
+                "#...........#",
+                "###B#A#C#D###",
+                "  #A#B#C#D#",
+                "  #########",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+            // When
+            let result = heuristic(&map);
+
+            // Then
+            assert_eq!(44, result);
         }
     }
 }
