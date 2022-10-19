@@ -1,8 +1,13 @@
+use std::cmp::Reverse;
+use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::iter::Iterator;
 use std::vec::Vec;
+
+use priority_queue::PriorityQueue;
+
 
 const CAVE: &str = "#############
 #...........#
@@ -17,51 +22,32 @@ const EXTRA_CAVE: &str =
 "  #D#C#B#A#
   #D#B#A#C#";
 
-#[derive(Clone, Copy, Hash, Eq, PartialEq, PartialOrd)]
-enum Color {
-    Amber = 0,
-    Bronze = 1,
-    Copper = 2,
-    Desert = 3,
-}
-
-impl Color {
-    fn marker(&self) -> &str {
-        match self {
-            Color::Amber => "A",
-            Color::Bronze => "B",
-            Color::Copper => "C",
-            Color::Desert => "D",
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Debug, Hash)]
 struct Position {
-    y: usize,
-    x: usize,
+    y: u8,
+    x: u8,
 }
 
 impl Position {
-    fn distance(&self, other: &Position) -> i64 {
-        ((self.y as i64) - (other.y as i64)).abs() + ((self.x as i64) - (other.x as i64)).abs()
+    fn distance(&self, other: &Position) -> i32 {
+        ((self.y as i32) - (other.y as i32)).abs() + ((self.x as i32) - (other.x as i32)).abs()
     }
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 struct Amphipod {
+    color: char,
     position: Position,
-    color: Color,
     has_moved: bool,
 }
 
 impl Amphipod {
-    fn energy_cost(&self) -> i64 {
-        10_i64.pow(self.color as u32)
+    fn energy_cost(&self) -> i32 {
+        10_i32.pow(self.color as u32 - 'A' as u32)
     }
 
-    fn home_column(&self) -> usize {
-        3 + 2 * (self.color as usize)
+    fn home_column(&self) -> u8 {
+        3 + 2 * (self.color as u8 - 'A' as u8)
     }
 
     fn possible_moves(&self, map: &Map) -> Vec<Position> {
@@ -75,7 +61,7 @@ impl Amphipod {
             (_, false) => POSSIBLE_SPOTS
                 .iter()
                 .map(|x| Position {
-                    x: *x as usize,
+                    x: *x as u8,
                     y: 1,
                 })
                 .collect(),
@@ -95,6 +81,7 @@ impl Amphipod {
 ///
 /// This should probably also be easily cloned so I can use this as the "job token" if I want to
 /// distribute the work between workers.
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 struct Map {
     amphipods: [Amphipod; 16],
 }
@@ -144,7 +131,7 @@ impl Map {
             if amphipod.home_column() == amphipod.position.x
                 && (2..=5).contains(&amphipod.position.y)
             {
-                let index: usize = 4 * amphipod.color as usize + (amphipod.position.y - 2);
+                let index: usize = 4 * (amphipod.color as usize - 'A' as usize) + (amphipod.position.y as usize - 2);
                 cache[index] = true;
             }
         });
@@ -155,7 +142,7 @@ impl Map {
     fn empty() -> Self {
         Map {
             amphipods: [Amphipod {
-                color: Color::Amber,
+                color: 'A',
                 position: Position { y: 0, x: 0 },
                 has_moved: false,
             }; 16],
@@ -172,27 +159,27 @@ impl FromIterator<String> for Map {
                 line.chars()
                     .enumerate()
                     .filter_map(|(x, c)| {
-                        let position = Position { x, y };
+                        let position = Position { x: x as u8, y: y as u8 };
 
                         match c {
                             'A' => Some(Amphipod {
                                 position,
-                                color: Color::Amber,
+                                color: 'A',
                                 has_moved: false,
                             }),
                             'B' => Some(Amphipod {
                                 position,
-                                color: Color::Bronze,
+                                color: 'B',
                                 has_moved: false,
                             }),
                             'C' => Some(Amphipod {
                                 position,
-                                color: Color::Copper,
+                                color: 'C',
                                 has_moved: false,
                             }),
                             'D' => Some(Amphipod {
                                 position,
-                                color: Color::Desert,
+                                color: 'D',
                                 has_moved: false,
                             }),
                             _ => None,
@@ -203,7 +190,7 @@ impl FromIterator<String> for Map {
             .flatten();
 
         let mut array = [Amphipod {
-            color: Color::Amber,
+            color: 'A',
             position: Position { y: 0, x: 0 },
             has_moved: false,
         }; 16];
@@ -224,72 +211,84 @@ impl fmt::Display for Map {
             let position = &amphipod.position;
             let offset = position.y * 14 + position.x;
 
-            data.replace_range(offset..=offset, amphipod.color.marker());
+            data.replace_range((offset as usize)..=(offset as usize), &amphipod.color.to_string());
         }
 
         writeln!(f, "{}", data)
     }
 }
 
-fn easiest_moves(map: &Map, current_cost: i64, current_minimum: i64, number_of_moves: i32) -> i64 {
-    if map.amphipods_organized() {
-        println!("{}", current_cost);
-        return current_cost;
-    }
+/// Return the heuristic for finishing this map.
+///
+/// Since this is used for prioritizing which states that should be examined in the A*-algorithm
+/// this needs to be close to the actual cost of finishing this map and never higher than the
+/// actual cost.
+fn heuristic(map: &Map) -> i32 {
+    map.amphipods.iter().map(|a| {
+        let y = match a.position.x == a.home_column() {
+            true => u8::max(2, a.position.y),
+            false => 0,  // Ugly hack to get distance of first moving into corridor, then into room
+        };
+        let goal = Position{ x: a.home_column(), y };
+        goal.distance(&a.position) * a.energy_cost()
+    }).sum()
+}
 
-    /*
-    println!(
-        "{}{:<2}{:>11}\n{:>13}",
-        map, number_of_moves, current_cost, current_minimum
-    );
-    */
-    let mut local_minimum = current_minimum;
-    let mut map_copy = Map::empty();
+fn easiest_moves(map: Map) -> i32 {
 
-    for n in 0..16
-        //map.amphipods.len()
-    {
-        let current_position = &map.amphipods[n].position;
-        let energy_cost = map.amphipods[n].energy_cost();
+    let mut queue: PriorityQueue<(Map, i32, i32), Reverse<i32>> = PriorityQueue::<_, _>::new();
+    queue.push((map, 0, 0), Reverse(0 + heuristic(&map)));
 
-        let moves = map
-            .amphipods
-            .get(n)
-            .expect("Missing amphipod")
-            .possible_moves(map);
-        //if moves.is_empty() {
-        //    eprintln!("Amphipod {} can't move.", n);
-        //}
-        for goal in moves {
-            let move_cost = current_position.distance(&goal) * energy_cost;
+    let mut seen: HashSet<Map> = HashSet::new();
 
-            if (current_cost + move_cost) >= local_minimum {
-                // Too expensive ignoring this move
-                continue;
-            }
+    let mut minimal_cost = std::i32::MAX;
+    let mut most_moves = 0;
 
-            //map_copy.amphipods.cop
-            // TODO: Benchmark copy_from, clone_from aso
-            map_copy.amphipods.clone_from(&map.amphipods);
-            map_copy.amphipods[n].position = goal;
-            map_copy.amphipods[n].has_moved = true;
-
-            local_minimum = easiest_moves(
-                &map_copy,
-                current_cost + move_cost,
-                local_minimum,
-                number_of_moves + 1,
-            );
+    while let Some(((map, cost, moves), _priority)) = queue.pop() {
+        //println!("{}{}, {}", map, cost, _priority.0);
+        //
+        if moves > most_moves {
+            eprintln!("Most moves: {}", moves);
+            most_moves = moves;
         }
+
+        if let Some(_) = seen.replace(map) {
+            continue;
+        }
+
+        if 0 == seen.len() & 0x3ffff {
+            eprintln!("q: {:>8} | s: {:>8}", queue.len(), seen.len());
+        }
+
+        if map.amphipods_organized() {
+            println!("{}", cost);
+            println!("q: {}", queue.len());
+            minimal_cost = i32::min(minimal_cost, cost);
+        }
+
+        map.amphipods.iter().enumerate().for_each(|(n, a)| {
+            let current_position = &a.position;
+            let energy_cost = a.energy_cost();
+
+            a.possible_moves(&map).iter().for_each(|goal| {
+                let map_cost = cost + current_position.distance(&goal) * energy_cost;
+
+                let mut map_copy = map;  // Copy
+                map_copy.amphipods[n].position = *goal;
+                map_copy.amphipods[n].has_moved = true;
+                map_copy.amphipods.sort();
+
+                let heuristic_cost = map_cost + heuristic(&map_copy);
+
+                if !seen.contains(&map_copy) && (map_cost + heuristic_cost) <= minimal_cost {
+                    queue.push((map_copy, map_cost, moves + 1), Reverse(heuristic_cost));
+                }
+
+            });
+        });
     }
 
-    /*
-    println!(
-        "{}{:<2}{:>11}\n{:>13}",
-        map, number_of_moves, current_cost, local_minimum
-    );
-    */
-    i64::min(current_minimum, local_minimum)
+    minimal_cost
 }
 
 fn main() {
@@ -301,9 +300,10 @@ fn main() {
     let mut lines: Vec<_> = reader.lines().filter_map(|s| Some(s.unwrap())).collect();
     EXTRA_CAVE.lines().for_each(|l| lines.insert(lines.len() - 2, l.to_string()));
 
-    let map: Map = lines.into_iter().collect();
+    let mut map: Map = lines.into_iter().collect();
+    map.amphipods.sort();
 
-    let result = easiest_moves(&map, 0, std::i64::MAX, 0);
+    let result = easiest_moves(map);
 
     println!("{}", result);
 }
@@ -522,41 +522,41 @@ mod test {
                     amphipods: [
                         Amphipod {
                             position: Position { x: 9, y: 1 },
-                            color: Color::Bronze,
+                            color: 'B',
                             has_moved: true,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
@@ -586,41 +586,41 @@ mod test {
                     amphipods: [
                         Amphipod {
                             position: Position { x: 5, y: 1 },
-                            color: Color::Bronze,
+                            color: 'B',
                             has_moved: true,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
                         Amphipod {
-                            color: Color::Amber,
+                            color: 'A',
                             position: Position { y: 0, x: 0 },
                             has_moved: false,
                         },
